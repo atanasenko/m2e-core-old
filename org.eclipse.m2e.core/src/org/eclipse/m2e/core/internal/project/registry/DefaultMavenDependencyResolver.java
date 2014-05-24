@@ -71,10 +71,25 @@ public class DefaultMavenDependencyResolver extends AbstractMavenDependencyResol
 
     // dependencies
 
+    // missing dependencies
+    // should be added before dependencies from MavenProject#getArtifacts() since those
+    // will be added with resolved flag set to true
+    DependencyResolutionResult resolutionResult = mavenResult.getDependencyResolutionResult();
+    if(resolutionResult != null && resolutionResult.getUnresolvedDependencies() != null) {
+      for(Dependency dependency : resolutionResult.getUnresolvedDependencies()) {
+        org.eclipse.aether.artifact.Artifact artifact = dependency.getArtifact();
+        ArtifactKey dependencyKey = new ArtifactKey(artifact.getGroupId(), artifact.getArtifactId(),
+            artifact.getVersion(), null);
+        MavenRequiredCapability req = MavenRequiredCapability.createMavenArtifact(dependencyKey, dependency.getScope(),
+            dependency.isOptional());
+        requirements.add(req);
+      }
+    }
+
     // resolved dependencies
     for(Artifact artifact : mavenProject.getArtifacts()) {
-      requirements.add(MavenRequiredCapability.createMavenArtifact(new ArtifactKey(artifact), artifact.getScope(),
-          artifact.isOptional()));
+      requirements.add(MavenRequiredCapability.createResolvedMavenArtifact(new ArtifactKey(artifact),
+          artifact.getScope(), artifact.isOptional()));
     }
 
     // extension plugins (affect packaging type calculation)
@@ -83,18 +98,6 @@ public class DefaultMavenDependencyResolver extends AbstractMavenDependencyResol
         ArtifactKey artifactKey = new ArtifactKey(plugin.getGroupId(), plugin.getArtifactId(), plugin.getVersion(),
             null);
         requirements.add(MavenRequiredCapability.createMavenArtifact(artifactKey, "plugin", false)); //$NON-NLS-1$
-      }
-    }
-
-    // missing dependencies
-    DependencyResolutionResult resolutionResult = mavenResult.getDependencyResolutionResult();
-    if(resolutionResult != null && resolutionResult.getUnresolvedDependencies() != null) {
-      for(Dependency dependency : resolutionResult.getUnresolvedDependencies()) {
-        org.eclipse.aether.artifact.Artifact artifact = dependency.getArtifact();
-        ArtifactKey dependencyKey = new ArtifactKey(artifact.getGroupId(), artifact.getArtifactId(),
-            artifact.getVersion(), null);
-        requirements.add(MavenRequiredCapability.createMavenArtifact(dependencyKey, dependency.getScope(),
-            dependency.isOptional()));
       }
     }
 
