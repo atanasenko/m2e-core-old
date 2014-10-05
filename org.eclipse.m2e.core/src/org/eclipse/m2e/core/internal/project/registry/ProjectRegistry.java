@@ -13,7 +13,9 @@ package org.eclipse.m2e.core.internal.project.registry;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.core.resources.IFile;
@@ -113,5 +115,19 @@ public class ProjectRegistry extends BasicProjectRegistry implements Serializabl
     Set<RequiredCapability> requirements = newState.getProjectRequirements(pom);
 
     return ProjectRegistryManager.hasDiff(oldRequirements, requirements);
+  }
+
+  void migrateLegacy() {
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    Map<ArtifactKey, Object> workspaceArtifacts = (Map) this.workspaceArtifacts;
+
+    for(Map.Entry<ArtifactKey, Object> e : workspaceArtifacts.entrySet()) {
+      Object value = e.getValue();
+      if(value instanceof IFile) {
+        Set<IFile> files = new LinkedHashSet<>();
+        files.add((IFile) value);
+        e.setValue(files);
+      }
+    }
   }
 }

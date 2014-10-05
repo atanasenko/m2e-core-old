@@ -162,7 +162,9 @@ public class ProjectRegistryManager {
 
     ProjectRegistry state = readState && stateReader != null ? stateReader.readWorkspaceState(this) : null;
     this.projectRegistry = (state != null && state.isValid()) ? state : new ProjectRegistry();
-
+    if(state != null) {
+      state.migrateLegacy();
+    }
     this.mavenProjectCache = createProjectCache();
   }
 
