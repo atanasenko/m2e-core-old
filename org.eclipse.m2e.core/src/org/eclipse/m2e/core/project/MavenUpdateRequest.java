@@ -39,6 +39,12 @@ public class MavenUpdateRequest {
   private boolean forceDependencyUpdate = false;
 
   /**
+   * If set to true, a refresh will not be carried out immediately, but a project will be marked as stale and a build
+   * triggered
+   */
+  private boolean deferred = false;
+
+  /**
    * Set of {@link IFile}
    */
   private final Set<IFile> pomFiles = new LinkedHashSet<IFile>();
@@ -59,6 +65,15 @@ public class MavenUpdateRequest {
     for(int i = 0; i < projects.length; i++ ) {
       addPomFile(projects[i]);
     }
+  }
+
+  public MavenUpdateRequest deferred() {
+    deferred = true;
+    return this;
+  }
+
+  public boolean isDeferred() {
+    return deferred;
   }
 
   public boolean isOffline() {

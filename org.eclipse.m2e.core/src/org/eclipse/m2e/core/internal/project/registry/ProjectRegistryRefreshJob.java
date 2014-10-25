@@ -18,6 +18,7 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResourceChangeEvent;
 import org.eclipse.core.resources.IResourceChangeListener;
@@ -86,7 +87,16 @@ public class ProjectRegistryRefreshJob extends Job implements IResourceChangeLis
               }
               manager.getMaven().execute(request.isOffline(), request.isForceDependencyUpdate(), new ICallable<Void>() {
                 public Void call(IMavenExecutionContext context, IProgressMonitor monitor) throws CoreException {
-                  manager.refresh(newState, request.getPomFiles(), monitor);
+
+                  Set<IFile> pomFiles = request.getPomFiles();
+
+                  if(request.isDeferred()) {
+                    if(manager.tryQueueBuild(newState, pomFiles, monitor)) {
+                      return null;
+                    }
+                  }
+
+                  manager.refresh(newState, pomFiles, monitor);
                   return null;
                 }
               }, monitor);
@@ -139,7 +149,7 @@ public class ProjectRegistryRefreshJob extends Job implements IResourceChangeLis
     if(IResourceChangeEvent.PRE_CLOSE == type || IResourceChangeEvent.PRE_DELETE == type) {
       IProject project = (IProject) event.getResource();
       if(isMavenProject(project)) {
-        queue(new MavenUpdateRequest(project, offline, forceDependencyUpdate));
+        queue(new MavenUpdateRequest(project, offline, forceDependencyUpdate).deferred());
       }
     } else {
       // if (IResourceChangeEvent.POST_CHANGE == type)
@@ -157,7 +167,7 @@ public class ProjectRegistryRefreshJob extends Job implements IResourceChangeLis
         //Bug 436679: queue update request only for reopened projects.
         //Imported projects (delta.getKind() == IResourceDelta.ADDED) will be taken care of by the builder.
         if((projectDelta.getKind() == IResourceDelta.CHANGED && (projectDelta.getFlags() & IResourceDelta.OPEN) != 0)) {
-          queue(new MavenUpdateRequest(project, offline, forceDependencyUpdate));
+          queue(new MavenUpdateRequest(project, offline, forceDependencyUpdate).deferred());
         }
       }
     }

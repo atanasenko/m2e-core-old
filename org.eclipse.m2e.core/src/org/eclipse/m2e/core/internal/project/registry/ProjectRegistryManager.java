@@ -124,13 +124,15 @@ public class ProjectRegistryManager {
 
   public static final String LIFECYCLE_SITE = "site";
 
+  private static final IPath SETTINGS_PATH = new Path(".settings/" + IMavenConstants.PLUGIN_ID + ".prefs"); //$NON-NLS-1$ //$NON-NLS-2$
+
   /**
    * Path of project metadata files, relative to the project. These files are used to determine if project dependencies
    * need to be updated.
    */
   public static final List<? extends IPath> METADATA_PATH = Arrays.asList( //
       new Path("pom.xml"), // //$NON-NLS-1$
-      new Path(".settings/" + IMavenConstants.PLUGIN_ID + ".prefs")); // dirty trick! //$NON-NLS-1$ //$NON-NLS-2$
+      SETTINGS_PATH); // dirty trick!
 
   private static final String CTX_MAVENPROJECTS = ProjectRegistryManager.class.getName() + "/mavenProjects";
 
@@ -306,8 +308,73 @@ public class ProjectRegistryManager {
     }
   }
 
+  boolean tryQueueBuild(MutableProjectRegistry newState, Collection<IFile> pomFiles, IProgressMonitor monitor) {
+    DependencyResolutionContext context = new DependencyResolutionContext(pomFiles);
+    return tryQueueBuild(newState, context, monitor);
+  }
+
+  private boolean tryQueueBuild(MutableProjectRegistry newState, DependencyResolutionContext context,
+      IProgressMonitor monitor) {
+
+    Set<IFile> processed = new HashSet<IFile>();
+
+    while(!context.isEmpty()) {
+
+      IFile pom = context.pop();
+      if(!processed.add(pom)) {
+        continue;
+      }
+
+      IProject project = pom.getProject();
+      if(project.isAccessible()) {
+
+        // touching settings makes project facade stale and triggers a refresh on next build
+        IFile settingsFile = project.getFile(SETTINGS_PATH);
+        try {
+          settingsFile.setLocalTimeStamp(settingsFile.getLocalTimeStamp() + 1000L);
+          settingsFile.touch(monitor);
+          log.debug("Queued build: {}", project); //$NON-NLS-1$
+        } catch(CoreException ex) {
+          log.debug("Unable to queue build", ex); //$NON-NLS-1$
+          return false;
+        }
+
+      }
+
+      // trigger builds of all dependent projects
+      MavenProjectFacade facade = newState.getProjectFacade(pom);
+      if(facade == null) {
+        log.debug("Unable to queue build: no facade"); //$NON-NLS-1$
+        return false;
+      }
+      ArtifactKey mavenProject = facade.getArtifactKey();
+      context.forcePomFiles(newState.getVersionedDependents(MavenCapability.createMavenArtifact(mavenProject), false));
+      context.forcePomFiles(newState.getVersionedDependents(MavenCapability.createMavenParent(mavenProject), false));
+      context.forcePomFiles(newState.getVersionedDependents(MavenCapability.createMavenArtifactImport(mavenProject),
+          false));
+    }
+
+    return true;
+  }
+
   void refresh(final MutableProjectRegistry newState, Collection<IFile> pomFiles, IProgressMonitor monitor)
       throws CoreException {
+
+    // handle deferred closed/deleted projects
+    List<IFile> newPomFiles = null;
+    for(IMavenProjectFacade facade : getProjects()) {
+      if(!facade.getProject().isAccessible()) {
+        if(newPomFiles == null) {
+          newPomFiles = new ArrayList<IFile>();
+        }
+        newPomFiles.add(facade.getPom());
+      }
+    }
+    if(newPomFiles != null) {
+      newPomFiles.addAll(pomFiles);
+      pomFiles = newPomFiles;
+    }
+
     log.debug("Refreshing: {}", pomFiles); //$NON-NLS-1$
 
     // 442524 safety guard
@@ -1126,4 +1193,21 @@ public class ProjectRegistryManager {
     }
     return Collections.emptySet();
   }
+
+  /*
+  public Set<IMavenProjectFacade> getDependents(MavenProjectFacade facade) {
+    if(facade == null) {
+      return Collections.emptySet();
+    }
+
+    ArtifactKey mavenProject = facade.getArtifactKey();
+
+    Set<IMavenProjectFacade> dependents = new HashSet<IMavenProjectFacade>();
+    projectRegistry.getDependents(MavenCapability.createMavenArtifact(mavenProject), dependents);
+    projectRegistry.getDependents(MavenCapability.createMavenParent(mavenProject), dependents);
+    projectRegistry.getDependents(MavenCapability.createMavenArtifactImport(mavenProject), dependents);
+
+    return dependents;
+  }
+  */
 }
