@@ -12,6 +12,8 @@
 package org.eclipse.m2e.editor.pom;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -20,8 +22,10 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.graph.DependencyVisitor;
+import org.eclipse.aether.graph.Exclusion;
 import org.eclipse.aether.util.graph.manager.DependencyManagerUtils;
 import org.eclipse.aether.util.graph.transformer.ConflictResolver;
 import org.eclipse.core.runtime.CoreException;
@@ -474,10 +478,15 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
       }
 
       public void run() {
-        if(listViewer.getComparator() == null) {
-          listViewer.setComparator(new ViewerComparator());
-        } else {
-          listViewer.setComparator(null);
+        listViewer.getControl().setRedraw(false);
+        try {
+          if(listViewer.getComparator() == null) {
+            listViewer.setComparator(new ViewerComparator());
+          } else {
+            listViewer.setComparator(null);
+          }
+        } finally {
+          listViewer.getControl().setRedraw(true);
         }
       }
     });
@@ -489,7 +498,12 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
 
       public void run() {
         listLabelProvider.setShowGroupId(isChecked());
-        listViewer.refresh();
+        listViewer.getControl().setRedraw(false);
+        try {
+          listViewer.refresh();
+        } finally {
+          listViewer.getControl().setRedraw(true);
+        }
       }
     });
 
@@ -499,10 +513,15 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
       }
 
       public void run() {
-        if(listViewer.getFilters() == null || listViewer.getFilters().length == 0) {
-          listViewer.addFilter(searchFilter);
-        } else {
-          listViewer.removeFilter(searchFilter);
+        listViewer.getControl().setRedraw(false);
+        try {
+          if(listViewer.getFilters() == null || listViewer.getFilters().length == 0) {
+            listViewer.addFilter(searchFilter);
+          } else {
+            listViewer.removeFilter(searchFilter);
+          }
+        } finally {
+          listViewer.getControl().setRedraw(true);
         }
       }
     });
@@ -624,12 +643,17 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
   protected void selectListElements(Matcher matcher) {
     DependencyListLabelProvider listLabelProvider = (DependencyListLabelProvider) listViewer.getLabelProvider();
     listLabelProvider.setMatcher(matcher);
-    listViewer.refresh();
+    listViewer.getControl().setRedraw(false);
+    try {
+      listViewer.refresh();
+    } finally {
+      listViewer.getControl().setRedraw(true);
+    }
 
     if(!matcher.isEmpty() && mavenProject != null) {
       Set<Artifact> projectArtifacts = mavenProject.getArtifacts();
       for(Artifact a : projectArtifacts) {
-        if(matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId())) {
+        if(matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId(), a.getVersion(), a.getBaseVersion())) {
           listViewer.reveal(a);
           break;
         }
@@ -651,12 +675,25 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
     if(!matcher.isEmpty()) {
       for(DependencyNode node : dependencyNodes) {
         org.eclipse.aether.artifact.Artifact a = node.getDependency().getArtifact();
-        if(matcher.isMatchingArtifact(a.getGroupId(), a.getGroupId())) {
+        if(matcher.isMatchingArtifact(a.getGroupId(), a.getGroupId(), a.getVersion(), a.getBaseVersion())) {
           treeViewer.reveal(node);
           break;
         }
       }
     }
+  }
+
+  static Collection<Exclusion> getDependencyExclusions(DependencyNode node) {
+    DependencyNode winner = (DependencyNode) node.getData().get(ConflictResolver.NODE_DATA_WINNER);
+
+    if(winner == null) {
+      Dependency dep = node.getDependency();
+      if(dep != null) {
+        return dep.getExclusions();
+      }
+    }
+
+    return Collections.emptySet();
   }
 
   static class DependencyFilter extends ViewerFilter {
@@ -671,12 +708,12 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
         // matcher = new TextMatcher(searchControl.getSearchText().getText());
         if(element instanceof Artifact) {
           Artifact a = (Artifact) element;
-          return matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId());
+          return matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId(), a.getVersion(), a.getBaseVersion());
 
         } else if(element instanceof DependencyNode) {
           DependencyNode node = (DependencyNode) element;
           org.eclipse.aether.artifact.Artifact a = node.getDependency().getArtifact();
-          if(matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId())) {
+          if(matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId(), a.getVersion(), a.getBaseVersion())) {
             return true;
           }
 
@@ -685,15 +722,31 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
 
             public boolean visitEnter(DependencyNode node) {
               org.eclipse.aether.artifact.Artifact a = node.getDependency().getArtifact();
-              if(matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId())) {
+              if(matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId(), a.getVersion(), a.getBaseVersion())) {
                 foundMatch = true;
                 return false;
               }
+
+              if(visitExclusions(node)) {
+                foundMatch = true;
+                return false;
+              }
+
               return true;
             }
 
             public boolean visitLeave(DependencyNode node) {
               return true;
+            }
+
+            private boolean visitExclusions(DependencyNode node) {
+              Collection<Exclusion> exclusions = getDependencyExclusions(node);
+              for(Exclusion ex : exclusions) {
+                if(matcher.isMatchingArtifact(ex.getGroupId(), ex.getArtifactId(), null, null)) {
+                  return true;
+                }
+              }
+              return false;
             }
           }
           ;
@@ -702,10 +755,14 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
           node.accept(childMatcher);
           return childMatcher.foundMatch;
         }
+
+        if(element instanceof Exclusion) {
+          Exclusion ex = (Exclusion) element;
+          return matcher.isMatchingArtifact(ex.getGroupId(), ex.getArtifactId(), null, null);
+        }
       }
       return true;
     }
-
   }
 
   class ListSelectionFilter extends DependencyFilter implements ISelectionChangedListener, FocusListener {
@@ -752,8 +809,16 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
       if(element instanceof DependencyNode) {
         DependencyNode node = (DependencyNode) element;
         List<DependencyNode> children = node.getChildren();
-        return children.toArray(new DependencyNode[children.size()]);
+
+        Collection<Exclusion> exclusions = getDependencyExclusions(node);
+
+        List<Object> result = new ArrayList<Object>(children.size() + exclusions.size());
+        result.addAll(children);
+        result.addAll(exclusions);
+
+        return result.toArray();
       }
+
       return new Object[0];
     }
 
@@ -764,7 +829,10 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
     public boolean hasChildren(Object element) {
       if(element instanceof DependencyNode) {
         DependencyNode node = (DependencyNode) element;
-        return !node.getChildren().isEmpty();
+
+        Collection<Exclusion> exclusions = getDependencyExclusions(node);
+
+        return !node.getChildren().isEmpty() || !exclusions.isEmpty();
       }
       return false;
     }
@@ -805,10 +873,21 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
     }
 
     public Color getBackground(Object element) {
-      if(matcher != null && !matcher.isEmpty() && element instanceof DependencyNode) {
-        org.eclipse.aether.artifact.Artifact a = ((DependencyNode) element).getDependency().getArtifact();
-        if(matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId())) {
-          return searchHighlightColor;
+      if(matcher != null && !matcher.isEmpty()) {
+        if(element instanceof DependencyNode) {
+
+          org.eclipse.aether.artifact.Artifact a = ((DependencyNode) element).getDependency().getArtifact();
+          if(matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId(), a.getVersion(), a.getBaseVersion())) {
+            return searchHighlightColor;
+          }
+
+        } else if(element instanceof Exclusion) {
+
+          Exclusion ex = (Exclusion) element;
+          if(matcher.isMatchingArtifact(ex.getGroupId(), ex.getArtifactId(), null, null)) {
+            return searchHighlightColor;
+          }
+
         }
       }
       return null;
@@ -858,6 +937,24 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
 
         return label.toString();
       }
+
+      if(element instanceof Exclusion) {
+        Exclusion exclusion = (Exclusion) element;
+        StringBuilder label = new StringBuilder(128);
+
+        if(showGroupId) {
+          label.append(exclusion.getGroupId()).append(" : ");
+        }
+
+        label.append(exclusion.getArtifactId());
+
+        if(exclusion.getClassifier().length() > 0) {
+          label.append(Messages.DependencyTreePage_0).append(exclusion.getClassifier());
+        }
+
+        return label.toString();
+      }
+
       return element.toString();
     }
 
@@ -872,6 +969,10 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
             a.getBaseVersion() == null ? a.getVersion() : a.getBaseVersion());
         return projectFacade == null ? MavenEditorImages.IMG_JAR : MavenEditorImages.IMG_PROJECT;
       }
+      if(element instanceof Exclusion) {
+        return MavenEditorImages.IMG_EXCLUDE;
+      }
+
       return null;
     }
   }
@@ -906,7 +1007,7 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
     public Color getBackground(Object element) {
       if(matcher != null && !matcher.isEmpty() && element instanceof Artifact) {
         Artifact a = (Artifact) element;
-        if(matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId())) {
+        if(matcher.isMatchingArtifact(a.getGroupId(), a.getArtifactId(), a.getVersion(), a.getBaseVersion())) {
           return searchHighlightColor;
         }
       }
@@ -994,7 +1095,7 @@ public class DependencyTreePage extends FormPage implements IMavenProjectChanged
       return artifactKeys.isEmpty();
     }
 
-    public boolean isMatchingArtifact(String groupId, String artifactId) {
+    public boolean isMatchingArtifact(String groupId, String artifactId, String version, String baseVersion) {
       return artifactKeys.contains(getKey(groupId, artifactId));
     }
 

@@ -16,7 +16,7 @@ package org.eclipse.m2e.editor.pom;
  */
 public abstract class Matcher {
 
-  public abstract boolean isMatchingArtifact(String groupId, String artifactId);
+  public abstract boolean isMatchingArtifact(String groupId, String artifactId, String version, String baseVersion);
 
   public abstract boolean isEmpty();
 

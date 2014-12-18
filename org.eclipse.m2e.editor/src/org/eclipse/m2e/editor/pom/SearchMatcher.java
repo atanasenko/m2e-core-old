@@ -22,10 +22,12 @@ public class SearchMatcher extends Matcher {
     this.searchControl = searchControl;
   }
 
-  public boolean isMatchingArtifact(String groupId, String artifactId) {
-    String text = searchControl.getSearchText().getText();
-    return (groupId != null && groupId.indexOf(text) > -1) //
-        || (artifactId != null && artifactId.indexOf(text) > -1);
+  public boolean isMatchingArtifact(String groupId, String artifactId, String version, String baseVersion) {
+    String text = searchControl.getSearchText().getText().toLowerCase();
+    return (groupId != null && groupId.toLowerCase().indexOf(text) > -1) //
+        || (artifactId != null && artifactId.toLowerCase().indexOf(text) > -1)
+        || (version != null && version.toLowerCase().indexOf(text) > -1)
+        || (baseVersion != null && baseVersion.toLowerCase().indexOf(text) > -1);
   }
 
   public boolean isEmpty() {

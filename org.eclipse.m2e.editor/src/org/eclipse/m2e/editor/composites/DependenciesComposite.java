@@ -645,10 +645,11 @@ public class DependenciesComposite extends Composite {
     public boolean select(Viewer viewer, Object parentElement, Object element) {
       if(element instanceof Dependency) {
         Dependency d = (Dependency) element;
-        return searchMatcher.isMatchingArtifact(d.groupId, d.artifactId);
+        return searchMatcher.isMatchingArtifact(d.groupId, d.artifactId, d.version, null);
       } else if(element instanceof org.apache.maven.model.Dependency) {
         org.apache.maven.model.Dependency dependency = (org.apache.maven.model.Dependency) element;
-        return searchMatcher.isMatchingArtifact(dependency.getGroupId(), dependency.getArtifactId());
+        return searchMatcher.isMatchingArtifact(dependency.getGroupId(), dependency.getArtifactId(),
+            dependency.getVersion(), null);
       }
       return false;
     }
