@@ -62,6 +62,7 @@ import org.eclipse.jface.viewers.TableViewer;
 import org.eclipse.jface.viewers.Viewer;
 import org.eclipse.jface.viewers.ViewerFilter;
 import org.eclipse.jface.window.Window;
+import org.eclipse.jface.wizard.WizardDialog;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.SashForm;
 import org.eclipse.swt.events.ModifyEvent;
@@ -95,6 +96,7 @@ import org.eclipse.m2e.core.ui.internal.editing.PomEdits.OperationTuple;
 import org.eclipse.m2e.core.ui.internal.editing.PomHelper;
 import org.eclipse.m2e.core.ui.internal.util.ParentGatherer;
 import org.eclipse.m2e.core.ui.internal.util.ParentHierarchyEntry;
+import org.eclipse.m2e.core.ui.internal.wizards.MavenDepMgmtWizard;
 import org.eclipse.m2e.editor.MavenEditorImages;
 import org.eclipse.m2e.editor.MavenEditorPlugin;
 import org.eclipse.m2e.editor.dialogs.ManageDependenciesDialog;
@@ -655,6 +657,9 @@ public class DependenciesComposite extends Composite {
   }
 
   void openManageDependenciesDialog() throws InvocationTargetException, InterruptedException {
+
+    new WizardDialog(getShell(), new MavenDepMgmtWizard(pomEditor.getPomFile().getProject())).open();
+
     /*
      * A linked list representing the path from child to root parent pom.
      * The head is the child, the tail is the root pom
@@ -663,7 +668,9 @@ public class DependenciesComposite extends Composite {
 
     IRunnableWithProgress projectLoader = new IRunnableWithProgress() {
       public void run(IProgressMonitor monitor) throws InvocationTargetException, InterruptedException {
+
         try {
+
           IMavenProjectRegistry projectManager = MavenPlugin.getMavenProjectRegistry();
           IMavenProjectFacade projectFacade = projectManager.create(pomEditor.getPomFile(), true, monitor);
           if(projectFacade != null) {
